@@ -1,32 +1,39 @@
-from pathlib import Path
-
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Path to flipfinder.db at the project root
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "flipfinder.db"
+# Use a relative SQLite path so it works both locally and on Render
+DATABASE_URL = "sqlite:///./flipfinder.db"
 
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
-
-# SQLite needs check_same_thread=False when used with FastAPI
+# SQLAlchemy engine and session factory
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},  # needed for SQLite + FastAPI
 )
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# Base class for ORM models; models.py does: from .db import Base
 Base = declarative_base()
 
 
+def init_db() -> None:
+    """
+    Ensure all tables are created.
+
+    On a fresh Render deploy there is no flipfinder.db file yet,
+    so we create the schema on startup. We import models here to
+    avoid circular imports (db -> models -> db).
+    """
+    from . import models  # local import to avoid circular dependency
+
+    Base.metadata.create_all(bind=engine)
+
+
 def get_db():
-    """FastAPI dependency that yields a DB session."""
-    db: Session = SessionLocal()
+    """
+    FastAPI dependency that yields a database session and closes it after use.
+    """
+    db = SessionLocal()
     try:
         yield db
     finally:
