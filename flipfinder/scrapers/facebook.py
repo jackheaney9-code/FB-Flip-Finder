@@ -1,10 +1,14 @@
-# flipfinder/scrapers/facebook.py
-
 import re
+import sys
+import subprocess
 from typing import List, Dict, Any, Optional
 from urllib.parse import quote_plus
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import (
+    sync_playwright,
+    TimeoutError as PlaywrightTimeoutError,
+    Error as PlaywrightError,
+)
 
 FACEBOOK_MARKETPLACE_BASE = "https://www.facebook.com/marketplace"
 
@@ -13,9 +17,10 @@ PRICE_RE = re.compile(r"^(?:CA\$|\$)?\s*([0-9][0-9.,]*)")
 
 def _parse_card_text(text: str) -> Dict[str, Any]:
     """
-    Parse inner_text() of a FB Marketplace card into price, title, location.
+    Parse the inner_text() of a FB Marketplace card into
+    price, title, location.
 
-    Example:
+    Example pattern:
         "CA$400\nMilwaukee m18 fuel 2 tool combo kit\nToronto, ON"
     """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
@@ -50,24 +55,59 @@ def _parse_card_text(text: str) -> Dict[str, Any]:
     }
 
 
-def _resolve_location_slug(location: Optional[str]) -> Optional[str]:
+def _normalize_location_keywords(location: Optional[str]) -> List[str]:
     """
-    Map a human location string to a Marketplace URL slug.
-    For now, we only care about Toronto.
+    Turn 'Toronto, ON' into ['toronto', 'on'] etc.
     """
     if not location:
-        return None
+        return []
 
-    loc = location.lower()
-    # Very simple mapping: anything containing 'toronto' → 'toronto'
-    if "toronto" in loc:
-        return "toronto"
+    raw = location.lower()
+    # Split on commas, slashes, dashes, pipes, and whitespace
+    tokens = re.split(r"[,/|\-]\s*|\s+", raw)
+    keywords = sorted({t for t in tokens if t})
+    return keywords
 
-    # You can extend this later with other cities:
-    # if "mississauga" in loc: return "mississauga_on"
-    # if "oakville" in loc: return "oakville_on"
 
-    return None
+def _location_matches(loc_text: Optional[str], keywords: List[str]) -> bool:
+    """
+    Check if the card's location text contains any of the keywords.
+    If there are no keywords, we accept all locations.
+    """
+    if not keywords:
+        return True  # no filtering
+
+    if not loc_text:
+        return False
+
+    lt = loc_text.lower()
+    for kw in keywords:
+        if kw and kw in lt:
+            return True
+    return False
+
+
+def _install_playwright_browsers_if_needed() -> None:
+    """
+    Try to install Chromium browsers at runtime if they are missing.
+    This is mainly for Render, where the build step may not have
+    installed them correctly.
+    """
+    try:
+        print("[WARN] Playwright browsers missing. Installing chromium at runtime...")
+        # Try with --with-deps first (works on many Linux environments)
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"]
+            )
+        except Exception:
+            # Fallback without --with-deps
+            subprocess.check_call(
+                [sys.executable, "-m", "playwright", "install", "chromium"]
+            )
+        print("[DEBUG] Playwright chromium install completed.")
+    except Exception as e:
+        print("[ERROR] Failed to install Playwright browsers at runtime:", e)
 
 
 def search_marketplace(
@@ -77,40 +117,52 @@ def search_marketplace(
     location: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Scrape FB Marketplace search results.
+    Scrape Facebook Marketplace search results.
 
-    IMPORTANT CHANGE:
-    - We no longer append 'Toronto, ON' to the query.
-    - Instead, for Toronto, we hit /marketplace/toronto/search/?query=...
+    If a location string is provided (e.g. 'Toronto, ON'), we bias the search
+    query by appending it (e.g. 'macbook pro Toronto, ON') and then filter
+    card locations by keywords derived from that string.
+
+    Returns a list of dicts with at least:
+      - url
+      - title
+      - price
+      - currency
+      - location
     """
 
-    # Just the user query (no location text in the query itself)
-    search_text = query.strip()
+    if location:
+        search_text = f"{query} {location}"
+    else:
+        search_text = query
+
     url_query = quote_plus(search_text)
 
-    location_slug = _resolve_location_slug(location)
+    search_url = (
+        f"{FACEBOOK_MARKETPLACE_BASE}/search/?query={url_query}"
+        f"&radiusKm={radius_km}"
+    )
 
-    if location_slug:
-        # Toronto-specific search path
-        search_url = (
-            f"{FACEBOOK_MARKETPLACE_BASE}/{location_slug}/search/?query={url_query}"
-            f"&radiusKm={radius_km}"
-        )
-    else:
-        # Fallback: generic search path
-        search_url = (
-            f"{FACEBOOK_MARKETPLACE_BASE}/search/?query={url_query}"
-            f"&radiusKm={radius_km}"
-        )
+    print(f"[DEBUG] FB URL: {search_url}")
+    print(f"[DEBUG] Raw location input: {location!r}")
 
-    print("[DEBUG] FB URL:", search_url)
-    print("[DEBUG] Raw location input:", repr(location))
-    print("[DEBUG] Resolved location slug:", repr(location_slug))
+    location_keywords = _normalize_location_keywords(location)
+    print(f"[DEBUG] Location keywords used for filter: {location_keywords}")
 
-    items: List[Dict[str, Any]] = []
+    results: List[Dict[str, Any]] = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        # --- Make sure the browser is installed / launch, with a runtime fallback ---
+        try:
+            browser = p.chromium.launch(headless=True)
+        except PlaywrightError as e:
+            if "Executable doesn't exist" in str(e):
+                # Install browsers at runtime, then retry once
+                _install_playwright_browsers_if_needed()
+                browser = p.chromium.launch(headless=True)
+            else:
+                raise
+
         page = browser.new_page()
 
         try:
@@ -118,25 +170,25 @@ def search_marketplace(
             page.wait_for_timeout(5_000)
 
             cards = page.locator('a[role="link"][href*="/marketplace/item/"]').all()
-            print(f"[DEBUG] Found {len(cards)} raw FB cards")
         except PlaywrightTimeoutError:
-            print("[ERROR] Timeout while loading FB search page")
             browser.close()
             return []
+
+        print(f"[DEBUG] Found {len(cards)} raw FB cards")
 
         for card in cards[:max_results]:
             href = card.get_attribute("href") or ""
             text = card.inner_text()
 
             parsed = _parse_card_text(text)
-            card_location = parsed.get("location") or ""
+            loc_text = parsed.get("location")
 
-            print(f"[DEBUG] Card location text: {card_location!r} (no post-filter)")
+            print(f"[DEBUG] Card location text: {loc_text!r}")
 
-            # NO post-filter here: we rely on the /marketplace/toronto/... context
-            # to bias results. We'll see if this actually yields GTA in practice.
+            if not _location_matches(loc_text, location_keywords):
+                print(f"[DEBUG] Skipping card with location {loc_text!r}")
+                continue
 
-            # Build full URL
             if href.startswith("/"):
                 full_url = "https://www.facebook.com" + href
             else:
@@ -154,9 +206,9 @@ def search_marketplace(
                 "photos": None,
                 "raw_html": None,
             }
-            items.append(item)
+            results.append(item)
 
         browser.close()
 
-    print(f"[DEBUG] Kept {len(items)} items total")
-    return items
+    print(f"[DEBUG] Kept {len(results)} items after location filter")
+    return results
