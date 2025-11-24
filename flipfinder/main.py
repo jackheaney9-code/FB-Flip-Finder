@@ -1,78 +1,69 @@
 from pathlib import Path
-from typing import List
 
 from fastapi import FastAPI, Request, Depends
-from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from fastapi.responses import HTMLResponse
+from starlette.templating import Jinja2Templates
 
-from .db import get_db
+from .db import get_db, init_db
 from . import models
-from .routers.facebook import router as facebook_router
-
+from .routers import facebook as facebook_router
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 
-app = FastAPI(title="FlipFinder")
-
-# Mount the Facebook scraper API
-app.include_router(facebook_router)
-
-# Jinja2 templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+app = FastAPI()
+app.include_router(facebook_router.router)
 
-@app.get("/")
+
+@app.on_event("startup")
+def on_startup():
+    """
+    Ensure the database schema exists when the app starts.
+    On Render, this will create flipfinder.db and all tables
+    if they are missing.
+    """
+    init_db()
+
+
+@app.get("/", response_class=HTMLResponse)
 def root(
     request: Request,
     min_profit: float = 150.0,
     min_roi: float = 0.35,
-    db: Session = Depends(get_db),
+    radius_km: int = 50,
+    db=Depends(get_db),
 ):
-    """
-    Deals dashboard.
+    # Extra safety: also ensure schema exists on first request.
+    # This is cheap and idempotent for SQLite.
+    init_db()
 
-    - Shows rows from listings where is_deal == 1
-    - Filters by min_profit and min_roi
-    - Passes them into dashboard.html as `deals`
-    """
-
-    # Query deals from DB
-    rows: List[models.Listing] = (
+    deals = (
         db.query(models.Listing)
-        .filter(
-            models.Listing.is_deal == True,  # only flagged deals
-            models.Listing.profit >= min_profit,
-            models.Listing.roi >= min_roi,
-        )
-        .order_by(models.Listing.id.desc())
-        .limit(200)
+        .filter(models.Listing.is_deal == True)
+        .filter(models.Listing.profit >= min_profit)
+        .filter(models.Listing.roi >= min_roi)
+        .order_by(models.Listing.created_at.desc())
+        .limit(50)
         .all()
     )
 
-    # Normalize rows to simple dicts for the template
-    deals = []
-    for row in rows:
-        deals.append(
-            {
-                "id": row.id,
-                "title": row.title,
-                "url": row.url,
-                "price": float(row.price or 0.0) if row.price is not None else 0.0,
-                "estimated_resale": float(getattr(row, "estimated_resale", 0.0) or 0.0),
-                "profit": float(getattr(row, "profit", 0.0) or 0.0),
-                "roi": float(getattr(row, "roi", 0.0) or 0.0),
-                "source": row.source,
-                "created_at": row.created_at,
-            }
-        )
+    recent = (
+        db.query(models.Listing)
+        .order_by(models.Listing.created_at.desc())
+        .limit(50)
+        .all()
+    )
 
     return templates.TemplateResponse(
         "dashboard.html",
         {
             "request": request,
             "deals": deals,
+            "recent": recent,
             "min_profit": min_profit,
             "min_roi": min_roi,
+            "radius_km": radius_km,
         },
     )
