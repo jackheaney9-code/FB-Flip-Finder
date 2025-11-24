@@ -1,0 +1,126 @@
+# flipfinder/scrapers/facebook.py
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
+FACEBOOK_MARKETPLACE_BASE = "https://www.facebook.com/marketplace"
+
+PRICE_RE = re.compile(r"^(?:CA\$|\$)?\s*([0-9][0-9.,]*)")
+
+
+def _parse_card_text(text: str) -> Dict[str, Any]:
+    """
+    Parse inner_text() of a FB Marketplace card into price, title, location.
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    price = None
+    title = ""
+    location = None
+    currency = "CA$"
+
+    if lines:
+        m = PRICE_RE.match(lines[0])
+        if m:
+            try:
+                price = float(m.group(1).replace(",", ""))
+            except ValueError:
+                price = None
+
+        if "CA$" in lines[0]:
+            currency = "CA$"
+        elif "$" in lines[0]:
+            currency = "$"
+
+        if len(lines) >= 2:
+            title = lines[1]
+        if len(lines) >= 3:
+            location = lines[2]
+
+    return {
+        "price": price,
+        "currency": currency,
+        "title": title,
+        "location": location,
+    }
+
+
+def search_marketplace(
+    query: str,
+    max_results: int = 30,
+    radius_km: int = 50,
+    location: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Scrape Marketplace, with NO location filtering (temporary).
+    """
+
+    if location:
+        search_text = f"{query} {location}"
+    else:
+        search_text = query
+
+    url_query = quote_plus(search_text)
+
+    search_url = (
+        f"{FACEBOOK_MARKETPLACE_BASE}/search/?query={url_query}"
+        f"&radiusKm={radius_km}"
+    )
+
+    print("[DEBUG] FB URL:", search_url)
+
+    items: List[Dict[str, Any]] = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        try:
+            page.goto(search_url, timeout=60_000)
+            page.wait_for_timeout(5_000)
+
+            cards = page.locator('a[role="link"][href*="/marketplace/item/"]').all()
+            print(f"[DEBUG] Found {len(cards)} raw FB cards")
+        except PlaywrightTimeoutError:
+            print("[ERROR] Timeout while loading FB search page")
+            browser.close()
+            return []
+
+        for card in cards[:max_results]:
+            href = card.get_attribute("href") or ""
+            text = card.inner_text()
+
+            parsed = _parse_card_text(text)
+            card_location = parsed.get("location") or ""
+
+            print(f"[DEBUG] Card location text: {card_location!r}")
+
+            # 🔥 TEMPORARY: KEEP EVERYTHING (NO LOCATION FILTER)
+            print(f"[DEBUG] Keeping card with location {card_location!r}")
+
+            # Build full URL
+            if href.startswith("/"):
+                full_url = "https://www.facebook.com" + href
+            else:
+                full_url = href
+
+            item = {
+                "url": full_url,
+                "title": parsed["title"],
+                "price": parsed["price"],
+                "currency": parsed["currency"],
+                "location": parsed["location"],
+                "description": None,
+                "posted_at_text": None,
+                "seller": None,
+                "photos": None,
+                "raw_html": None,
+            }
+            items.append(item)
+
+        browser.close()
+
+    print(f"[DEBUG] Kept {len(items)} items total (no filtering)")
+    return items

@@ -1,0 +1,376 @@
+import re
+import asyncio
+from dataclasses import dataclass
+from typing import Dict, Any, Optional, List, Pattern
+
+from sqlalchemy.orm import Session
+from .. import models
+
+
+# ---------------------------------------------------------------------------
+# GLOBAL DEAL RULES
+# ---------------------------------------------------------------------------
+
+MAX_BUY_PRICE: float = 1_000_000.0  # effectively no cap
+MIN_PROFIT: float = 150.0
+MIN_ROI: float = 0.35
+
+
+# ---------------------------------------------------------------------------
+# KEYWORD RULE ENGINE
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PricingRule:
+    name: str
+    pattern: Pattern
+    multiplier: float
+    min_resale_floor: float
+    notes: str = ""
+
+
+def _compile(pattern: str) -> Pattern:
+    return re.compile(pattern, flags=re.IGNORECASE)
+
+
+# Furniture / casegoods rules (what you already had)
+PRICING_RULES: List[PricingRule] = [
+    PricingRule(
+        name="designer_midcentury_casegoods",
+        pattern=_compile(
+            r"(eames|herman miller|knoll|ligne roset|roche bobois|"
+            r"paul mccobb|milo baughman|g[\s-]?plan|mcintosh|"
+            r"broyhill bras|broyhill emphasis|drexel|henredon)"
+        ),
+        multiplier=3.0,
+        min_resale_floor=900.0,
+        notes="Top-tier designer casegoods.",
+    ),
+    PricingRule(
+        name="teak_rosewood_walnut_casegoods",
+        pattern=_compile(
+            r"(teak|rosewood|walnut|danish modern|danish teak|scandinavian)"
+        ),
+        multiplier=2.6,
+        min_resale_floor=650.0,
+        notes="Solid wood mid-century furniture.",
+    ),
+    PricingRule(
+        name="burl_travertine_marble_lucite_brass",
+        pattern=_compile(
+            r"(burl wood|burlwood|travertine|marble top|onyx top|lucite|acrylic|"
+            r"brass base|bronze base)"
+        ),
+        multiplier=2.8,
+        min_resale_floor=700.0,
+        notes="High-end materials with strong resale.",
+    ),
+    PricingRule(
+        name="modern_premium_brands",
+        pattern=_compile(
+            r"(restoration hardware|^rh\b|west elm|article|cb2|eq3|"
+            r"bo concept|boconcept|crate & barrel|crate and barrel)"
+        ),
+        multiplier=2.2,
+        min_resale_floor=550.0,
+        notes="Modern premium retail brands.",
+    ),
+    PricingRule(
+        name="generic_luxury_casegoods",
+        pattern=_compile(
+            r"(mid century|midcentury|mcm|vintage walnut|vintage oak|"
+            r"solid oak|solid wood|campaign dresser|parsons table|"
+            r"brutalist|postmodern|italian modern)"
+        ),
+        multiplier=2.0,
+        min_resale_floor=500.0,
+        notes="General high-value casegoods.",
+    ),
+    PricingRule(
+        name="cane_rattan_details",
+        pattern=_compile(
+            r"(cane front|cane doors|cane panels|caning|rattan front|rattan doors)"
+        ),
+        multiplier=1.9,
+        min_resale_floor=450.0,
+        notes="Cane and rattan furniture.",
+    ),
+
+    # -----------------------------------------------------------------------
+    # NEW: high-value electronics / tools / apparel rules
+    # -----------------------------------------------------------------------
+
+    PricingRule(
+        name="apple_macbook_laptops",
+        pattern=_compile(
+            r"(macbook\s*(air|pro)\b|macbook m1|macbook m2|macbook m3|macbook m4)"
+        ),
+        multiplier=1.7,
+        min_resale_floor=900.0,
+        notes="Modern MacBook laptops with strong resale.",
+    ),
+    PricingRule(
+        name="high_end_apple_devices",
+        pattern=_compile(
+            r"(iphone 1[3-9]\b|iphone\s?15\s?pro|max\b|iphone\s?14\s?pro|max\b|"
+            r"apple watch ultra)"
+        ),
+        multiplier=1.6,
+        min_resale_floor=700.0,
+        notes="Recent iPhones / Apple Watch Ultra.",
+    ),
+    PricingRule(
+        name="premium_gaming_consoles",
+        pattern=_compile(
+            r"(playstation 5|ps5\b|xbox series x)"
+        ),
+        multiplier=1.5,
+        min_resale_floor=500.0,
+        notes="Current-gen gaming consoles.",
+    ),
+    PricingRule(
+        name="concept2_and_large_fitness",
+        pattern=_compile(
+            r"(concept2 rower|concept 2 rower|concept2\b|concept 2\b|"
+            r"rogue echo bike|rogue squat rack|peloton bike)"
+        ),
+        multiplier=1.5,
+        min_resale_floor=800.0,
+        notes="Big-ticket fitness gear.",
+    ),
+    PricingRule(
+        name="milwaukee_dewalt_festool_tools",
+        pattern=_compile(
+            r"(milwaukee.*(m18|fuel)|dewalt.*flexvolt|festool)"
+        ),
+        multiplier=1.6,
+        min_resale_floor=500.0,
+        notes="Pro-grade cordless tools with strong resale.",
+    ),
+    PricingRule(
+        name="premium_outerwear",
+        pattern=_compile(
+            r"(canada goose|arcteryx|arc'teryx|patagonia down sweater|moncler)"
+        ),
+        multiplier=1.6,
+        min_resale_floor=600.0,
+        notes="High-end technical or luxury outerwear.",
+    ),
+    PricingRule(
+        name="premium_strollers_car_seats",
+        pattern=_compile(
+            r"(uppababy vista|uppa baby vista|nuna exec|nuna rava|"
+            r"thule chariot)"
+        ),
+        multiplier=1.5,
+        min_resale_floor=500.0,
+        notes="High-end baby gear (strollers, car seats, chariots).",
+    ),
+]
+
+
+# We keep this around if you later want to gate furniture-specific rules,
+# but we no longer block non-furniture items from matching rules.
+CASEGOOD_FOCUS_PATTERN: Pattern = _compile(
+    r"(dresser|chest of drawers|tallboy|highboy|sideboard|credenza|"
+    r"buffet|server|hutch|china cabinet|coffee table|cocktail table|"
+    r"parsons table|console table|sofa table|media console|media unit|"
+    r"media cabinet|tv stand)"
+)
+
+
+def _normalize_text(title: str, description: Optional[str]) -> str:
+    desc = description or ""
+    return f"{title} {desc}".lower()
+
+
+def _match_best_rule(text: str) -> Optional[PricingRule]:
+    """
+    Return the first pricing rule whose regex matches the text.
+
+    NOTE: previously this required CASEGOOD_FOCUS_PATTERN to match,
+    which meant only mid-century casegoods ever got a rule. Now we
+    allow ANY rule to fire (electronics, tools, jackets, etc.).
+    """
+    for rule in PRICING_RULES:
+        if rule.pattern.search(text):
+            return rule
+    return None
+
+
+def estimate_rule_based_resale(
+    listing_title: str,
+    listing_description: Optional[str],
+    asking_price: Optional[float],
+) -> Dict[str, Any]:
+    price = float(asking_price or 0.0)
+    text = _normalize_text(listing_title, listing_description)
+
+    best_rule = _match_best_rule(text)
+    if not best_rule or price <= 0:
+        return {
+            "rule_based_resale": 0.0,
+            "applied_rule": None,
+            "notes": "no_match",
+        }
+
+    rough = price * best_rule.multiplier
+    rb = max(rough, best_rule.min_resale_floor)
+
+    return {
+        "rule_based_resale": float(round(rb, 2)),
+        "applied_rule": best_rule.name,
+        "notes": best_rule.notes,
+    }
+
+
+def compute_profit_metrics(
+    asking_price: Optional[float],
+    estimated_resale: Optional[float],
+) -> Dict[str, Any]:
+    price = float(asking_price or 0.0)
+    resale = float(estimated_resale or 0.0)
+
+    if price <= 0 or resale <= 0:
+        return {
+            "profit": 0.0,
+            "roi": 0.0,
+            "is_deal": False,
+            "reason": "missing_price_or_resale",
+        }
+
+    profit = resale - price
+    roi = profit / price if price > 0 else 0.0
+
+    if profit < MIN_PROFIT:
+        return {
+            "profit": round(profit, 2),
+            "roi": round(roi, 3),
+            "is_deal": False,
+            "reason": "below_min_profit",
+        }
+
+    if roi < MIN_ROI:
+        return {
+            "profit": round(profit, 2),
+            "roi": round(roi, 3),
+            "is_deal": False,
+            "reason": "below_min_roi",
+        }
+
+    return {
+        "profit": round(profit, 2),
+        "roi": round(roi, 3),
+        "is_deal": True,
+        "reason": "meets_all_thresholds",
+    }
+
+
+async def evaluate_listing_comps(
+    db: Session,
+    listing: "models.Listing",
+    ebay_resale: Optional[float] = None,
+) -> Dict[str, Any]:
+    title = getattr(listing, "title", "") or ""
+    description = getattr(listing, "description", "") or ""
+    asking_price = getattr(listing, "price", None)
+
+    rule_result = estimate_rule_based_resale(title, description, asking_price)
+    rule_resale = rule_result["rule_based_resale"]
+
+    if ebay_resale and ebay_resale > rule_resale:
+        final_resale = float(ebay_resale)
+        source = "ebay"
+    else:
+        final_resale = float(rule_resale)
+        source = "rules"
+
+    metrics = compute_profit_metrics(asking_price, final_resale)
+
+    result: Dict[str, Any] = {
+        "asking_price": float(asking_price or 0.0),
+        "estimated_resale": round(final_resale, 2),
+        "resale_source": source,
+        "profit": metrics["profit"],
+        "roi": metrics["roi"],
+        "is_deal": metrics["is_deal"],
+        "deal_reason": metrics["reason"],
+        "rule_applied": rule_result.get("applied_rule"),
+        "rule_notes": rule_result.get("notes"),
+        "max_buy_price": MAX_BUY_PRICE,
+        "min_profit": MIN_PROFIT,
+        "min_roi": MIN_ROI,
+    }
+
+    if hasattr(listing, "estimated_resale"):
+        listing.estimated_resale = result["estimated_resale"]
+    if hasattr(listing, "profit"):
+        listing.profit = metrics["profit"]
+    if hasattr(listing, "roi"):
+        listing.roi = metrics["roi"]
+    if hasattr(listing, "is_deal"):
+        listing.is_deal = metrics["is_deal"]
+
+    try:
+        db.add(listing)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return result
+
+
+def evaluate_listing_comps_sync(
+    db: Session,
+    listing: "models.Listing",
+    ebay_resale: Optional[float] = None,
+) -> Dict[str, Any]:
+    # Use asyncio.run so it works in AnyIO worker threads (no existing loop)
+    return asyncio.run(
+        evaluate_listing_comps(db, listing, ebay_resale=ebay_resale)
+    )
+
+
+def refresh_comps_for_listing_id(
+    db: Session,
+    listing_id: int,
+) -> Dict[str, Any]:
+    """
+    Synchronous wrapper used by routers.facebook.run_facebook_search.
+
+    Returns a dict where:
+      - top-level 'estimated_profit' is used by facebook.py filters
+      - 'data' contains the full metrics from evaluate_listing_comps_sync
+    """
+    listing = db.query(models.Listing).filter(models.Listing.id == listing_id).first()
+    if not listing:
+        return {
+            "success": False,
+            "reason": "listing_not_found",
+            "listing_id": listing_id,
+            "estimated_profit": 0.0,
+            "roi": 0.0,
+        }
+
+    comps = evaluate_listing_comps_sync(db, listing)
+
+    return {
+        "success": True,
+        "listing_id": listing_id,
+        "data": comps,
+        "estimated_profit": comps.get("profit", 0.0),
+        "roi": comps.get("roi", 0.0),
+        "estimated_resale": comps.get("estimated_resale", 0.0),
+    }
+
+
+__all__ = [
+    "MAX_BUY_PRICE",
+    "MIN_PROFIT",
+    "MIN_ROI",
+    "estimate_rule_based_resale",
+    "compute_profit_metrics",
+    "evaluate_listing_comps",
+    "evaluate_listing_comps_sync",
+    "refresh_comps_for_listing_id",
+]

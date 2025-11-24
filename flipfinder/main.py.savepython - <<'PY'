@@ -1,0 +1,76 @@
+from fastapi import FastAPI
+
+app = FastAPI()
+
+# add this block:
+from .routers import facebook as fb_router
+app.include_router(fb_router.router)
+python - <<'PY'
+from flipfinder.scrapers.facebook import search_marketplace
+from flipfinder.config import settings
+print("Opening browser for first login…")
+items = search_marketplace(
+    keywords=["test"],
+    region_name=settings.FB_REGION_NAME,
+    radius_km=settings.FB_RADIUS_KM,
+    max_pages=1,
+    headless=False  # headful on purpose
+)
+print(f"Fetched {len(items)} items (ok if 0). Cookies saved to", settings.FB_COOKIE_PATH)
+PY
+uvicorn flipfinder.main:app --reload
+nano flipfinder/main.py
+print("Opening browser for first login…")
+...
+PY
+uvicorn flipfinder.main:app --reload
+from .routers import facebook as fb_router
+app.include_router(fb_router.router)
+python - <<'PY'
+from flipfinder.scrapers.facebook import search_marketplace
+from flipfinder.config import settings
+
+print("Opening browser for first login…")
+items = search_marketplace(
+    keywords=["test"],
+    region_name=settings.FB_REGION_NAME,
+    radius_km=settings.F
+# flipfinder/main.py
+from fastapi import FastAPI
+
+app = FastAPI(title="FlipFinder")
+
+# If you already had other routers, keep them.
+# These try/except blocks avoid breaking if a module/route doesn't exist.
+try:
+    from .routers import search as search_router
+    app.include_router(search_router.router)
+except Exception:
+    pass
+
+try:
+    from .routers import listings as listings_router
+    app.include_router(listings_router.router)
+except Exception:
+    pass
+
+try:
+    from .routers import recent as recent_router
+    app.include_router(recent_router.router)
+except Exception:
+    pass
+
+# NEW: Facebook scraper endpoints
+try:
+    from .routers import facebook as fb_router
+    app.include_router(fb_router.router)
+except Exception:
+    # If the file isn't found or has import errors, you’ll still be able to boot.
+    pass
+
+# Simple health endpoint (optional)
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+

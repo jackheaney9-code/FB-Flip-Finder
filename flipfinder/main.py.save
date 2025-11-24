@@ -1,0 +1,82 @@
+nano flipfinder/scrapers/facebook.py
+def _parse_cards(page) -> Iterable[Dict[str, Any]]:
+    cards = page.locator('a[role="link"][href*="/marketplace/item/"]').all()
+    for a in cards:
+        href = a.get_attribute("href") or ""
+        title = a.get_attribute("aria-label") or (a.inner_text() or "")
+
+        # Price: best-effort
+        price_text = ""
+        try:
+            price_el = a.locator('span:has-text("$"), span:has-text("C$")')
+            if price_el.count():
+                price_text = price_el.first.inner_text(timeout=1000)
+        except Exception:
+            pass
+
+        # Location: best-effort (do not block)
+        loc_text = ""
+        try:
+            spans = a.locator("span").all()
+            for s in spans[-3:]:
+                t = s.inner_text(timeout=500)
+                if "·" in t or (len(t) <= 40 and any(ch.isalpha() for ch in t)):
+                    loc_text = t
+        except Exception:
+            pass
+
+        yield {
+            "url": "https://www.facebook.com" + href,
+            "title": (title or "").strip(),
+            "price_str": (price_text or "").strip(),
+            "location": (loc_text or "").strip(),
+        }
+source .venv/bin/activate
+export PYTHONPATH="$PWD"
+uvicorn flipfinder.main:app --reload
+source .venv/bin/activate
+export PYTHONPATH="$PWD"
+uvicorn flipfinder.main:app --reload
+cd ~/flipfinder
+source .venv/bin/activate
+export PYTHONPATH="$PWD"
+
+python - <<'PY'
+from flipfinder.main import app
+print([ (r.path, getattr(r, "methods", None)) for r in app.routes if "/scrape" in getattr(r, "path", "") ])
+PY
+xxfrom .routers import facebook as fb_router
+app.include_router(fb_router.router)
+from fastapi import FastAPI
+
+app = FastAPI(title="FlipFinder")
+
+# Keep other routers if you have them (surrounded with try/except so boot never fails)
+try:
+    from .routers import search as search_router
+    app.include_router(search_router.router)
+except Exception:
+    pass
+
+try:
+    from .routers import listings as listings_router
+    app.include_router(listings_router.router)
+except Exception:
+    pass
+
+try:
+    from .routers import recent as recent_router
+    app.include_router(recent_router.router)
+except Exception:
+    pass
+
+# Facebook scraper endpoints
+try:
+    from .routers import facebook as fb_router
+    app.include_router(fb_router.router)
+except Exception:
+    pass
+
+@app.get("/health")
+def health():
+    return {"ok": True}

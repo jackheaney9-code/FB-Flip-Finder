@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FB Flip Finder Dashboard</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+
+    /* Theme variables */
+    :root[data-theme="light"] {
+      --bg: #f9fafb;
+      --bg-panel: #e5f6ff;
+      --bg-panel-2: #eef2ff;
+      --text: #0f172a;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --input-border: #cbd5f5;
+      --table-header: #e0f2fe;
+      --table-row-alt: #f9fafb;
+      --accent: #2563eb;
+      --button-bg: #22c55e;
+      --button-bg-hover: #16a34a;
+      --chip-bg: #e5e7eb;
+      --chip-bg-hover: #d1d5db;
+    }
+
+    :root[data-theme="dark"] {
+      --bg: #020617;
+      --bg-panel: #0b1120;
+      --bg-panel-2: #020617;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --border: #1f2937;
+      --input-border: #374151;
+      --table-header: #111827;
+      --table-row-alt: #020617;
+      --accent: #60a5fa;
+      --button-bg: #22c55e;
+      --button-bg-hover: #16a34a;
+      --chip-bg: #1f2937;
+      --chip-bg-hover: #374151;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 20px;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    #top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.6rem;
+    }
+
+    h2 {
+      margin-bottom: 0.4rem;
+      color: var(--accent);
+      font-size: 1.2rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.75rem;
+      margin-bottom: 1.75rem;
+      background: #ffffff10;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      font-size: 1rem;
+      line-height: 1.4;
+    }
+
+    th {
+      background: var(--table-header);
+      text-align: left;
+      font-weight: 600;
+      cursor: default;
+      user-select: none;
+    }
+
+    th.sortable {
+      cursor: pointer;
+    }
+
+    tr:nth-child(even) td {
+      background: var(--table-row-alt);
+    }
+
+    form {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      font-size: 0.9rem;
+      margin-right: 0.5rem;
+      color: var(--muted);
+    }
+
+    input {
+      padding: 5px 8px;
+      font-size: 0.95rem;
+      border-radius: 4px;
+      border: 1px solid var(--input-border);
+      background: #ffffff;
+      box-sizing: border-box;
+    }
+
+    :root[data-theme="dark"] input {
+      background: #020617;
+      color: var(--text);
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 1px #3b82f6;
+    }
+
+    button {
+      padding: 7px 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      border: none;
+      background: var(--button-bg);
+      color: #ffffff;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+
+    button:hover {
+      background: var(--button-bg-hover);
+    }
+
+    .small {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    #theme-toggle {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 10px;
+      font-size: 0.9rem;
+    }
+
+    #theme-toggle:hover {
+      background: #00000010;
+    }
+
+    /* Filter form */
+    #filters-form {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 10px;
+      padding: 8px 10px;
+      background: var(--bg-panel);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+
+    #filters-form .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    #filters-form input[type="number"] {
+      width: 130px;
+      max-width: 130px;
+    }
+
+    /* Keyword generator box */
+    #keyword-box {
+      padding: 10px;
+      background: var(--bg-panel-2);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+
+    #keyword-box-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    #keyword-box h2 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    #keyword-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    #keyword-controls select {
+      padding: 5px 8px;
+      font-size: 0.95rem;
+      border-radius: 4px;
+      border: 1px solid var(--input-border);
+      background: #ffffff;
+      color: var(--text);
+    }
+
+    :root[data-theme="dark"] #keyword-controls select {
+      background: #020617;
+      color: var(--text);
+    }
+
+    #keyword-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .keyword-chip {
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--chip-bg);
+      font-size: 0.9rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .keyword-chip:hover {
+      background: var(--chip-bg-hover);
+    }
+
+    .keyword-chip span {
+      opacity: 0.9;
+    }
+
+    #keyword-hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* Scrape form */
+    #scrape-form {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 12px;
+      padding: 10px;
+      background: var(--bg-panel-2);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+    }
+
+    #scrape-form .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    #scrape-form input[type="text"],
+    #scrape-form input[type="number"] {
+      width: 190px;
+      max-width: 190px;
+    }
+  </style>
+</head>
+<body>
+  <div id="top-bar">
+    <h1>FB Flip Finder Dashboard</h1>
+    <button id="theme-toggle">Dark mode</button>
+  </div>
+
+  <!-- Filter form (GET /) -->
+  <form id="filters-form" method="get" action="/">
+    <div class="field-group">
+      <label for="min_profit">Min Profit</label>
+      <input type="number" step="1" id="min_profit" name="min_profit" value="{{ min_profit }}">
+    </div>
+    <div class="field-group">
+      <label for="min_roi">Min ROI</label>
+      <input type="number" step="0.01" id="min_roi" name="min_roi" value="{{ min_roi }}">
+    </div>
+    <button type="submit">Apply Filters</button>
+  </form>
+
+  <!-- 🔑 Keyword generator box -->
+  <section id="keyword-box">
+    <div id="keyword-box-header">
+      <h2>Keyword Ideas (High-ROI Niches)</h2>
+    </div>
+    <div id="keyword-controls">
+      <label for="keyword_category">Category</label>
+      <select id="keyword_category">
+        <option value="hot">🔥 High ROI Mix</option>
+        <option value="electronics">Electronics & Laptops</option>
+        <option value="tools">Pro Tools</option>
+        <option value="outerwear">Premium Outerwear</option>
+        <option value="strollers">Strollers & Baby Gear</option>
+        <option value="furniture">Mid-Century & Design</option>
+        <option value="luxury_bags">Luxury Bags</option>
+        <option value="luxury_watches">Luxury Watches</option>
+        <option value="home_appliances">Home Appliances</option>
+        <option value="collectibles">Collectibles</option>
+        <option value="photography">Cameras & Lenses</option>
+        <option value="audio_hifi">Audio & HiFi</option>
+      </select>
+      <button type="button" id="keyword_generate_btn">Suggest Keywords</button>
+      <button type="button" id="keyword_ai_btn">AI Generate Mix</button>
+    </div>
+    <div id="keyword-suggestions"></div>
+    <div id="keyword-hint">
+      Click a keyword to send it into the "What are you looking for?" box. You can tweak it before scraping.
+    </div>
+  </section>
+
+  <!-- Scrape form (POST /scrape/facebook via fetch) -->
+  <form id="scrape-form">
+    <div class="field-group">
+      <label for="query">What are you looking for?</label>
+      <input type="text" id="query" name="query" placeholder="e.g. macbook pro" required>
+    </div>
+
+    <div class="field-group">
+      <label for="location">Location</label>
+      <input type="text" id="location" name="location" value="Toronto, ON" placeholder="Toronto, ON">
+    </div>
+
+    <div class="field-group">
+      <label for="radius_km">Radius (km)</label>
+      <input type="number" id="radius_km" name="radius_km" value="50">
+    </div>
+
+    <div class="field-group">
+      <label for="scrape_min_profit">Min Profit (for deals)</label>
+      <input type="number" step="1" id="scrape_min_profit" value="{{ min_profit }}">
+    </div>
+
+    <div class="field-group">
+      <label for="scrape_min_roi">Min ROI (for deals)</label>
+      <input type="number" step="0.01" id="scrape_min_roi" value="{{ min_roi }}">
+    </div>
+
+    <button type="submit">Scrape Facebook</button>
+  </form>
+
+  <!-- Deals table -->
+  <h2>Deal Listings (filtered by profit / ROI)</h2>
+  {% if deals %}
+    <table class="ff-table ff-deals">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Title</th>
+          <th>Price</th>
+          <th>Est Resale</th>
+          <th>Profit</th>
+          <th>ROI</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in deals %}
+          <tr>
+            <td>{{ l.id }}</td>
+            <td>
+              {% if l.url %}
+                <a href="{{ l.url }}" target="_blank">{{ l.title }}</a>
+              {% else %}
+                {{ l.title }}
+              {% endif %}
+            </td>
+            <td>{{ l.price }} {{ l.currency }}</td>
+            <td>{{ "%.0f"|format(l.estimated_resale or 0) }}</td>
+            <td>{{ "%.0f"|format(l.profit or 0) }}</td>
+            <td>{{ "%.2f"|format(l.roi or 0) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="small">No deals yet for these thresholds.</p>
+  {% endif %}
+
+  <!-- Recent table -->
+  <h2>Recent Scraped Listings (no thresholds)</h2>
+  {% if recent %}
+    <table class="ff-table ff-recent">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Title</th>
+          <th>Price</th>
+          <th>Est Resale</th>
+          <th>Profit</th>
+          <th>ROI</th>
+          <th>Deal?</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in recent %}
+          <tr>
+            <td>{{ l.id }}</td>
+            <td>
+              {% if l.url %}
+                <a href="{{ l.url }}" target="_blank">{{ l.title }}</a>
+              {% else %}
+                {{ l.title }}
+              {% endif %}
+            </td>
+            <td>{{ l.price }} {{ l.currency }}</td>
+            <td>{{ "%.0f"|format(l.estimated_resale or 0) }}</td>
+            <td>{{ "%.0f"|format(l.profit or 0) }}</td>
+            <td>{{ "%.2f"|format(l.roi or 0) }}</td>
+            <td>{{ "✅" if l.is_deal else "" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="small">No recent listings yet.</p>
+  {% endif %}
+
+  <script>
+    // ---------- Keyword presets: LOTS of high-ticket items ----------
+    const KEYWORD_PRESETS = {
+      hot: [
+        "mid century teak dresser",
+        "mid century teak sideboard",
+        "mcm credenza",
+        "mcm teak wall unit",
+        "burl wood coffee table",
+        "travertine coffee table",
+        "marble dining table",
+        "boucle accent chair",
+        "article sofa",
+        "cb2 console table",
+        "restoration hardware dining table",
+        "milwaukee m18 fuel combo kit",
+        "dewalt flexvolt combo kit",
+        "festool domino joiner",
+        "festool track saw ts55",
+        "dyson v11 vacuum",
+        "dyson v15 vacuum",
+        "vitamix blender",
+        "breville barista express espresso machine",
+        "canada goose parka medium",
+        "arcteryx beta ar jacket",
+        "uppababy vista v2 stroller",
+        "bugaboo donkey stroller",
+        "nuna pipa car seat"
+      ],
+      electronics: [
+        "macbook pro 14\" m1 pro",
+        "macbook pro 16\" m1 pro",
+        "macbook air m2",
+        "ipad pro 11\"",
+        "ipad pro 12.9\"",
+        "gaming laptop rtx 3060",
+        "gaming laptop rtx 3070",
+        "ultrawide monitor 34\"",
+        "4k monitor 27\"",
+        "sony a7 iii camera",
+        "sony a7 iv camera",
+        "canon eos r camera",
+        "fuji x-t4 camera",
+        "sony 24-70 f2.8 lens",
+        "canon 24-70 f2.8 lens",
+        "ps5 console",
+        "xbox series x",
+        "nintendo switch oled",
+        "sonos arc soundbar",
+        "sonos sub subwoofer"
+      ],
+      tools: [
+        "milwaukee m18 fuel impact",
+        "milwaukee m18 fuel hammer drill",
+        "milwaukee m18 fuel combo kit",
+        "milwaukee packout set",
+        "dewalt flexvolt circular saw",
+        "dewalt flexvolt combo kit",
+        "dewalt xr brad nailer",
+        "festool domino df 500",
+        "festool track saw ts 55",
+        "festool sander ets",
+        "bosch laser level",
+        "bosch mitre saw",
+        "ridgid table saw",
+        "makita impact driver kit",
+        "hilti rotary hammer drill"
+      ],
+      outerwear: [
+        "canada goose langford parka",
+        "canada goose trillium parka",
+        "canada goose rossclair parka",
+        "canada goose bomber jacket",
+        "arcteryx beta ar jacket",
+        "arcteryx beta lt jacket",
+        "arcteryx atom lt jacket",
+        "moncler down jacket",
+        "moncler parka",
+        "patagonia down sweater jacket",
+        "patagonia nano puff jacket",
+        "north face summit series jacket",
+        "moose knuckles parka",
+        "mackage leather jacket",
+        "mackage wool coat"
+      ],
+      strollers: [
+        "uppababy vista v2 stroller",
+        "uppababy cruz v2 stroller",
+        "uppababy vista stroller",
+        "bugaboo donkey stroller",
+        "bugaboo cameleon stroller",
+        "bugaboo fox stroller",
+        "baby jogger city select stroller",
+        "baby jogger city mini gt",
+        "nuna mixx stroller",
+        "nuna pipa car seat",
+        "maxi cosi mico car seat",
+        "britax boulevard car seat",
+        "thule jogging stroller",
+        "double stroller uppababy",
+        "double stroller bugaboo"
+      ],
+      furniture: [
+        "mid century teak dresser",
+        "mid century teak sideboard",
+        "mid century modern dresser",
+        "mcm credenza",
+        "mcm wall unit",
+        "mcm lounge chair",
+        "teak dining table",
+        "solid wood dining table",
+        "live edge dining table",
+        "travertine coffee table",
+        "burl wood coffee table",
+        "burl wood side table",
+        "boucle accent chair",
+        "boucle swivel chair",
+        "cb2 coffee table",
+        "cb2 dining table",
+        "article sofa",
+        "article sectional",
+        "restoration hardware coffee table",
+        "restoration hardware mirror"
+      ],
+      luxury_bags: [
+        "louis vuitton neverfull mm",
+        "louis vuitton speedy 30",
+        "louis vuitton alma bb",
+        "gucci marmont bag",
+        "gucci dionysus bag",
+        "chanel classic flap bag",
+        "chanel boy bag",
+        "prada re-edition nylon bag",
+        "ysl saint laurent lou camera bag",
+        "ysl kate bag",
+        "celine luggage tote",
+        "hermes evelyne bag"
+      ],
+      luxury_watches: [
+        "rolex submariner watch",
+        "rolex datejust watch",
+        "omega speedmaster watch",
+        "omega seamaster watch",
+        "tag heuer carrera watch",
+        "breitling navitimer watch",
+        "tudor black bay watch",
+        "cartier tank watch",
+        "cartier santos watch"
+      ],
+      home_appliances: [
+        "dyson v11 vacuum",
+        "dyson v15 vacuum",
+        "dyson airwrap styler",
+        "dyson supersonic hair dryer",
+        "vitamix blender",
+        "blendtec blender",
+        "breville barista express espresso machine",
+        "breville oracle espresso machine",
+        "kitchenaid stand mixer",
+        "nespresso vertuo machine",
+        "yeti tundra cooler",
+        "instant pot duo crisp"
+      ],
+      collectibles: [
+        "pokemon card collection",
+        "pokemon sealed booster box",
+        "lego star wars set",
+        "lego modular building set",
+        "funko pop chase figure",
+        "sports cards psa 10",
+        "sports cards graded lot",
+        "vintage nintendo games",
+        "vintage retro video games"
+      ],
+      photography: [
+        "sony a7 iii camera",
+        "sony a7 iv camera",
+        "canon eos r6 camera",
+        "fuji x-t4 camera",
+        "nikon z6 camera",
+        "sigma 35mm f1.4 lens",
+        "tamron 28-75 f2.8 lens",
+        "godox ad200 flash",
+        "profoto b10 strobe",
+        "peak design camera bag"
+      ],
+      audio_hifi: [
+        "sonos arc soundbar",
+        "sonos sub subwoofer",
+        "klipsch bookshelf speakers",
+        "bowers and wilkins speakers",
+        "bose soundbar 700",
+        "denon av receiver",
+        "marantz av receiver",
+        "audio technica turntable",
+        "technics sl-1200 turntable"
+      ]
+    };
+
+    // Run after DOM is ready
+    window.addEventListener("DOMContentLoaded", () => {
+      // ---------- Keyword chips + AI mix ----------
+      function clearKeywordChips() {
+        const container = document.getElementById("keyword-suggestions");
+        if (container) container.innerHTML = "";
+      }
+
+      function renderKeywordChipList(list) {
+        const container = document.getElementById("keyword-suggestions");
+        const queryInput = document.getElementById("query");
+        if (!container || !queryInput) return;
+        container.innerHTML = "";
+
+        list.forEach((kw) => {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "keyword-chip";
+          chip.innerHTML = `<span>${kw}</span>`;
+          chip.addEventListener("click", () => {
+            queryInput.value = kw;
+            queryInput.focus();
+          });
+          container.appendChild(chip);
+        });
+      }
+
+      function renderKeywordChips(category) {
+        const list = KEYWORD_PRESETS[category] || [];
+        if (!list.length) {
+          clearKeywordChips();
+          return;
+        }
+        renderKeywordChipList(list);
+      }
+
+      function shuffleArray(arr) {
+        const a = arr.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      }
+
+      function generateAiMix(selectedCategory) {
+        const allCategories = Object.keys(KEYWORD_PRESETS);
+        const mix = [];
+
+        // 1) Take up to 4 from the selected category (if valid)
+        if (KEYWORD_PRESETS[selectedCategory]) {
+          const base = shuffleArray(KEYWORD_PRESETS[selectedCategory]).slice(0, 4);
+          mix.push(...base);
+        }
+
+        // 2) Take random categories and pull 1–2 keywords from each
+        const otherCategories = shuffleArray(
+          allCategories.filter((c) => c !== selectedCategory)
+        );
+
+        for (const cat of otherCategories) {
+          if (mix.length >= 12) break;
+          const list = KEYWORD_PRESETS[cat] || [];
+          if (!list.length) continue;
+          const shuffled = shuffleArray(list);
+          mix.push(shuffled[0]);
+          if (shuffled[1] && mix.length < 12) {
+            mix.push(shuffled[1]);
+          }
+        }
+
+        // 3) Deduplicate while keeping order
+        const seen = new Set();
+        const unique = [];
+        for (const kw of mix) {
+          if (!seen.has(kw)) {
+            seen.add(kw);
+            unique.push(kw);
+          }
+        }
+
+        // Limit to 12 chips
+        return unique.slice(0, 12);
+      }
+
+      const keywordBtn = document.getElementById("keyword_generate_btn");
+      if (keywordBtn) {
+        keywordBtn.addEventListener("click", () => {
+          const sel = document.getElementById("keyword_category");
+          const category = sel ? sel.value : "hot";
+          renderKeywordChips(category);
+        });
+      }
+
+      const keywordAiBtn = document.getElementById("keyword_ai_btn");
+      if (keywordAiBtn) {
+        keywordAiBtn.addEventListener("click", () => {
+          const sel = document.getElementById("keyword_category");
+          const category = sel ? sel.value : "hot";
+          const mix = generateAiMix(category);
+          renderKeywordChipList(mix);
+        });
+      }
+
+      // ---------- Scrape form handler ----------
+      const scrapeForm = document.getElementById("scrape-form");
+      if (scrapeForm) {
+        scrapeForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+
+          const queryInput = document.getElementById("query");
+          const locationInput = document.getElementById("location");
+
+          const query = queryInput.value.trim();
+          let location = locationInput.value.trim();
+
+          if (!location) {
+            location = "Toronto, ON";
+            locationInput.value = location;
+          }
+
+          const radius_km = parseInt(
+            document.getElementById("radius_km").value || "50",
+            10
+          );
+          const min_profit = parseFloat(
+            document.getElementById("scrape_min_profit").value || "150"
+          );
+          const min_roi = parseFloat(
+            document.getElementById("scrape_min_roi").value || "0.35"
+          );
+
+          if (!query) {
+            alert("Please enter what you're looking for.");
+            return;
+          }
+
+          const body = {
+            query,
+            location,
+            radius_km,
+            min_profit,
+            min_roi,
+            max_results: 30,
+          };
+
+          const resp = await fetch("/scrape/facebook", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+
+          if (!resp.ok) {
+            alert("Scrape failed: " + resp.status);
+            return;
+          }
+
+          const data = await resp.json();
+          const created = data && data.created_ids ? data.created_ids.length : 0;
+
+          // Optional UX: tell you if nothing was imported
+          if (!created) {
+            alert(
+              "No Marketplace listings were found for this search in your location.\n\n" +
+              "Try different keywords or a larger radius."
+            );
+          }
+
+          const q = new URLSearchParams({
+            min_profit: String(min_profit),
+            min_roi: String(min_roi),
+          });
+          window.location = "/?" + q.toString();
+        });
+      }
+
+      // ---------- Theme toggle ----------
+      (function initThemeToggle() {
+        const root = document.documentElement;
+        const stored = localStorage.getItem("ff-theme");
+        const prefersDark =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+        if (stored === "light" || stored === "dark") {
+          root.setAttribute("data-theme", stored);
+        } else {
+          root.setAttribute("data-theme", prefersDark ? "dark" : "light");
+        }
+
+        const btn = document.getElementById("theme-toggle");
+        if (!btn) return;
+
+        function updateLabel() {
+          const current = root.getAttribute("data-theme") || "light";
+          btn.textContent = current === "dark" ? "Light mode" : "Dark mode";
+        }
+        updateLabel();
+
+        btn.addEventListener("click", () => {
+          const current = root.getAttribute("data-theme") || "light";
+          const next = current === "dark" ? "light" : "dark";
+          root.setAttribute("data-theme", next);
+          localStorage.setItem("ff-theme", next);
+          updateLabel();
+        });
+      })();
+
+      // ---------- Table sorting (Price, Est Resale, Profit, ROI) ----------
+      (function initTableSorting() {
+        const sortableLabels = ["price", "est resale", "profit", "roi"];
+
+        function getCellValue(row, colIndex, label) {
+          const cell = row.children[colIndex];
+          if (!cell) return 0;
+          const text = cell.textContent.trim();
+          const numeric = parseFloat(text.replace(/[^\d.\-]/g, ""));
+          if (!isNaN(numeric)) {
+            return numeric;
+          }
+          return text.toLowerCase();
+        }
+
+        function wireTable(table) {
+          const thead = table.querySelector("thead");
+          const tbody = table.querySelector("tbody");
+          if (!thead || !tbody) return;
+
+          const headers = Array.from(thead.querySelectorAll("th"));
+          const rows = Array.from(tbody.querySelectorAll("tr"));
+
+          // store original order
+          rows.forEach((row, index) => {
+            row.dataset.originalIndex = String(index);
+          });
+
+          headers.forEach((th, colIndex) => {
+            const label = th.textContent.trim().toLowerCase();
+            if (!sortableLabels.includes(label)) {
+              return;
+            }
+
+            th.classList.add("sortable");
+            th.dataset.sortState = "none";
+
+            th.addEventListener("click", () => {
+              const current = th.dataset.sortState || "none";
+              const next =
+                current === "none" ? "asc" : current === "asc" ? "desc" : "none";
+              th.dataset.sortState = next;
+
+              headers.forEach((other) => {
+                if (other !== th) {
+                  other.dataset.sortState = "none";
+                }
+              });
+
+              let sortedRows = Array.from(tbody.querySelectorAll("tr"));
+
+              if (next === "none") {
+                sortedRows.sort((a, b) => {
+                  const ai = parseInt(a.dataset.originalIndex || "0", 10);
+                  const bi = parseInt(b.dataset.originalIndex || "0", 10);
+                  return ai - bi;
+                });
+              } else {
+                sortedRows.sort((a, b) => {
+                  const va = getCellValue(a, colIndex, label);
+                  const vb = getCellValue(b, colIndex, label);
+
+                  if (va < vb) return next === "asc" ? -1 : 1;
+                  if (va > vb) return next === "asc" ? 1 : -1;
+                  return 0;
+                });
+              }
+
+              sortedRows.forEach((row) => tbody.appendChild(row));
+            });
+          });
+        }
+
+        document
+          .querySelectorAll("table.ff-table")
+          .forEach((table) => wireTable(table));
+      })();
+    });
+  </script>
+</body>
+</html>

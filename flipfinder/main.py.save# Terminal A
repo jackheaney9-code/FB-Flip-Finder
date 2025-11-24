@@ -1,0 +1,36 @@
+from .routers import facebook as fb_router
+app.include_router(fb_router.router)
+
+from fastapi import FastAPI
+
+app = FastAPI(title="FlipFinder")
+
+# Keep other routers if you have them (surrounded with try/except so boot never fails)
+try:
+    from .routers import search as search_router
+    app.include_router(search_router.router)
+except Exception:
+    pass
+
+try:
+    from .routers import listings as listings_router
+    app.include_router(listings_router.router)
+except Exception:
+    pass
+
+try:
+    from .routers import recent as recent_router
+    app.include_router(recent_router.router)
+except Exception:
+    pass
+
+# Facebook scraper endpoints
+try:
+    from .routers import facebook as fb_router
+    app.include_router(fb_router.router)
+except Exception:
+    pass
+
+@app.get("/health")
+def health():
+    return {"ok": True}

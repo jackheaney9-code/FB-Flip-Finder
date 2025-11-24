@@ -1,0 +1,38 @@
+# flipfinder/main.py
+from fastapi import FastAPI
+
+app = FastAPI(title="FlipFinder")
+
+# If you already had other routers, keep them.
+# These try/except blocks avoid breaking if a module/route doesn't exist.
+try:
+    from .routers import search as search_router
+    app.include_router(search_router.router)
+except Exception:
+    pass
+
+try:
+    from .routers import listings as listings_router
+    app.include_router(listings_router.router)
+except Exception:
+    pass
+
+try:
+    from .routers import recent as recent_router
+    app.include_router(recent_router.router)
+except Exception:
+    pass
+
+# NEW: Facebook scraper endpoints
+try:
+    from .routers import facebook as fb_router
+    app.include_router(fb_router.router)
+except Exception:
+    # If the file isn't found or has import errors, you’ll still be able to boot.
+    pass
+
+# Simple health endpoint (optional)
+@app.get("/health")
+def health():
+    return {"ok": True}
+

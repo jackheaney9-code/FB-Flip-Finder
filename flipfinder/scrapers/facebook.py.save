@@ -1,0 +1,263 @@
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+import re
+from typing import List, Dict, Any, Optional
+from urllib.parse import quote_plus
+
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
+FACEBOOK_MARKETPLACE_BASE = "https://www.facebook.com/marketplace"
+
+PRICE_RE = re.compile(r"^(?:CA\$|\$)?\s*([0-9][0-9.,]*)")
+
+
+def _parse_card_text(text: str) -> Dict[str, Any]:
+    """
+    Parse the inner_text() of a FB Marketplace card into:
+      - price
+      - title
+      - location
+
+    Example pattern:
+        "CA$400
+        Milwaukee m18 fuel 2 tool combo kit
+        Toronto, ON"
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    price = None
+    title = ""
+    location = None
+    currency = "CA$"
+
+    if lines:
+        m = PRICE_RE.match(lines[0])
+        if m:
+            try:
+                price = float(m.group(1).replace(",", ""))
+            except ValueError:
+                price = None
+
+        if "CA$" in lines[0]:
+            currency = "CA$"
+        elif "$" in lines[0]:
+            currency = "$"
+
+        if len(lines) >= 2:
+            title = lines[1]
+        if len(lines) >= 3:
+            location = lines[2]
+
+    return {
+        "price": price,
+        "currency": currency,
+        "title": title,
+        "location": location,
+    }
+
+
+def _build_location_keywords(location: Optional[str]) -> List[str]:
+    """
+    Turn a location string like 'Toronto, ON' into a list of lowercase
+    keywords we'll require in the card's location line.
+
+    For example:
+      'Toronto, ON' -> ['toronto', 'on', 'ontario']
+    """
+    keywords: List[str] = []
+
+    if not location:
+        return keywords
+
+    loc = location.strip()
+    if not loc:
+        return keywords
+
+    parts = [p.strip() for p in loc.split(",") if p.strip()]
+    if parts:
+        city = parts[0].lower()
+        keywords.append(city)
+
+        if len(parts) >= 2:
+            region = parts[1].lower()
+            keywords.append(region)
+
+        if "toronto" in city:
+            keywords.extend(["on", "ontario"])
+
+    return sorted(set(keywords))
+
+
+def search_marketplace(
+    query: str,
+    max_results: int = 30,
+    radius_km: int = 50,
+    location: Optional[str] = "Toronto, ON",
+) -> List[Dict[str, Any]]:
+    """
+    Scrape Facebook Marketplace search results.
+
+    - Defaults to 'Toronto, ON' if no location is provided.
+    - We bias the search using the location in the query.
+    - We *gently* filter results based on the card's location text:
+        * If card has a real location string → require one of the
+          keywords (toronto/on/ontario).
+        * If card has NO location (or something like '20 km away')
+          → we KEEP it (to avoid throwing everything away).
+    """
+
+    if location:
+        search_text = f"{query} {location}"
+    else:
+        search_text = query
+
+    url_query = quote_plus(search_text)
+
+    search_url = (
+        f"{FACEBOOK_MARKETPLACE_BASE}/search/?query={url_query}"
+        f"&radiusKm={radius_km}"
+    )
+
+    print("[DEBUG] FB URL:", search_url)
+
+    location_keywords = _build_location_keywords(location)
+    print("[DEBUG] Location keywords:", location_keywords)
+
+    results: List[Dict[str, Any]] = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        try:
+            page.goto(search_url, timeout=60_000)
+            page.wait_for_timeout(5_000)
+
+            cards = page.locator('a[role="link"][href*="/marketplace/item/"]').all()
+            print(f"[DEBUG] Found {len(cards)} raw FB cards")
+        except PlaywrightTimeoutError:
+            print("[DEBUG] Timeout when loading FB search page")
+            browser.close()
+            return []
+
+        kept = 0
+
+        for card in cards[:max_results]:
+            href = card.get_attribute("href") or ""
+            text = card.inner_text()
+
+            parsed = _parse_card_text(text)
+            loc_text_raw = parsed["location"] or ""
+            loc_text = loc_text_raw.lower()
+
+            # Decide if this card passes the location filter
+            passes_location_filter = True
+
+            if location_keywords and loc_text_raw:
+                # Only enforce when FB gives us a real city string
+                if not any(kw in loc_text for kw in location_keywords):
+                    passes_location_filter = False
+
+            if not passes_location_filter:
+                # Debug a couple of skips so we can see what's happening
+                print(f"[DEBUG] Skipping card with location '{loc_text_raw}'")
+                continue
+
+            # Build full URL
+            if href.startswith("/"):
+                full_url = "https://www.facebook.com" + href
+            else:
+                full_url = href
+
+            item = {
+                "url": full_url,
+                "title": parsed["title"],
+                "price": parsed["price"],
+                "currency": parsed["currency"],
+                "location": parsed["location"],
+                "description": None,
+                "posted_at_text": None,
+                "seller": None,
+                "photos": None,
+                "raw_html": None,
+            }
+            results.append(item)
+            kept += 1
+
+        print(f"[DEBUG] Kept {kept} items after location filter")
+        browser.close()
+
+    return results

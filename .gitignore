@@ -1,0 +1,17 @@
+# Python venv
+.venv/
+venv/
+
+# Bytecode / cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local DB
+flipfinder.db
+
+# macOS junk
+.DS_Store
+
+# Playwright cache (if any)
+playwright/.cache/
