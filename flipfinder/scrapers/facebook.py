@@ -63,7 +63,6 @@ def _normalize_location_keywords(location: Optional[str]) -> List[str]:
         return []
 
     raw = location.lower()
-    # Split on commas, slashes, dashes, pipes, and whitespace
     tokens = re.split(r"[,/|\-]\s*|\s+", raw)
     keywords = sorted({t for t in tokens if t})
     return keywords
@@ -89,25 +88,15 @@ def _location_matches(loc_text: Optional[str], keywords: List[str]) -> bool:
 
 def _install_playwright_browsers_if_needed() -> None:
     """
-    Try to install Chromium browsers at runtime if they are missing.
-    This is mainly for Render, where the build step may not have
-    installed them correctly.
+    Fallback hook if browsers are missing.
+
+    On Render, we rely on the build step (install_playwright.py)
+    to install Chromium. At runtime, we just log a clear error.
     """
-    try:
-        print("[WARN] Playwright browsers missing. Installing chromium at runtime...")
-        # Try with --with-deps first (works on many Linux environments)
-        try:
-            subprocess.check_call(
-                [sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"]
-            )
-        except Exception:
-            # Fallback without --with-deps
-            subprocess.check_call(
-                [sys.executable, "-m", "playwright", "install", "chromium"]
-            )
-        print("[DEBUG] Playwright chromium install completed.")
-    except Exception as e:
-        print("[ERROR] Failed to install Playwright browsers at runtime:", e)
+    print(
+        "[ERROR] Playwright browsers missing at runtime. "
+        "Ensure 'python -m playwright install chromium' runs during build."
+    )
 
 
 def search_marketplace(
@@ -118,17 +107,6 @@ def search_marketplace(
 ) -> List[Dict[str, Any]]:
     """
     Scrape Facebook Marketplace search results.
-
-    If a location string is provided (e.g. 'Toronto, ON'), we bias the search
-    query by appending it (e.g. 'macbook pro Toronto, ON') and then filter
-    card locations by keywords derived from that string.
-
-    Returns a list of dicts with at least:
-      - url
-      - title
-      - price
-      - currency
-      - location
     """
 
     if location:
@@ -152,16 +130,12 @@ def search_marketplace(
     results: List[Dict[str, Any]] = []
 
     with sync_playwright() as p:
-        # --- Make sure the browser is installed / launch, with a runtime fallback ---
         try:
             browser = p.chromium.launch(headless=True)
         except PlaywrightError as e:
             if "Executable doesn't exist" in str(e):
-                # Install browsers at runtime, then retry once
                 _install_playwright_browsers_if_needed()
-                browser = p.chromium.launch(headless=True)
-            else:
-                raise
+            raise
 
         page = browser.new_page()
 
